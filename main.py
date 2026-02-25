@@ -124,3 +124,66 @@ def _sub_safe(a: int, b: int) -> int:
 # REGION MANAGER (off-chain helper; regions for exit nodes)
 # -----------------------------------------------------------------------------
 
+class RegionManager:
+    ALLOWED_REGIONS = ("US", "EU", "AP", "SA", "AF", "OC", "ME", "XX")
+
+    @classmethod
+    def is_valid_region(cls, region: str) -> bool:
+        return region is not None and len(region) <= IF_MAX_REGION_LEN and (not region or region.upper() in cls.ALLOWED_REGIONS or len(region) <= 3)
+
+    @classmethod
+    def normalize_region(cls, region: str) -> str:
+        if not region:
+            return "XX"
+        return region.upper()[:IF_MAX_REGION_LEN]
+
+# -----------------------------------------------------------------------------
+# BANDWIDTH TRACKER (simulated bytes per tunnel/session; for limits)
+# -----------------------------------------------------------------------------
+
+class BandwidthTracker:
+    def __init__(self) -> None:
+        self._tunnel_bytes: Dict[str, int] = {}
+        self._session_bytes: Dict[str, int] = {}
+        self._lock = threading.Lock()
+
+    def add_tunnel_bytes(self, tunnel_id: str, delta: int) -> int:
+        with self._lock:
+            self._tunnel_bytes[tunnel_id] = _add_safe(self._tunnel_bytes.get(tunnel_id, 0), max(0, delta))
+            return self._tunnel_bytes[tunnel_id]
+
+    def add_session_bytes(self, session_id: str, delta: int) -> int:
+        with self._lock:
+            self._session_bytes[session_id] = _add_safe(self._session_bytes.get(session_id, 0), max(0, delta))
+            return self._session_bytes[session_id]
+
+    def get_tunnel_bytes(self, tunnel_id: str) -> int:
+        with self._lock:
+            return self._tunnel_bytes.get(tunnel_id, 0)
+
+    def get_session_bytes(self, session_id: str) -> int:
+        with self._lock:
+            return self._session_bytes.get(session_id, 0)
+
+    def total_bytes(self) -> int:
+        with self._lock:
+            return sum(self._tunnel_bytes.values())
+
+# -----------------------------------------------------------------------------
+# KEY STORE SIMULATION (opaque key handles for tunnel encryption; no real keys)
+# -----------------------------------------------------------------------------
+
+class KeyStoreSim:
+    def __init__(self) -> None:
+        self._keys: Dict[str, str] = {}
+        self._lock = threading.Lock()
+
+    def put(self, handle: str, opaque: str) -> None:
+        with self._lock:
+            self._keys[handle] = opaque
+
+    def get(self, handle: str) -> Optional[str]:
+        with self._lock:
+            return self._keys.get(handle)
+
+    def delete(self, handle: str) -> bool:
