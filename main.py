@@ -187,3 +187,66 @@ class KeyStoreSim:
             return self._keys.get(handle)
 
     def delete(self, handle: str) -> bool:
+        with self._lock:
+            if handle in self._keys:
+                del self._keys[handle]
+                return True
+            return False
+
+# -----------------------------------------------------------------------------
+# IRON FIST CORE
+# -----------------------------------------------------------------------------
+
+class IronFist:
+    """
+    VPN-style tunnel and exit-node registry. Gatekeeper registers exit nodes;
+    users open tunnels bound to an exit node and bind sessions. All critical
+    addresses are set at construction and are immutable.
+    """
+
+    def __init__(self) -> None:
+        # Immutable (set once at construction)
+        self._gatekeeper: str = "0xb2f8c1e4a6d9f0b3c5e7a9d1f4b6c8e0a2d5f7b9"
+        self._treasury: str = "0xc3a9d2e5f8b1c4e7a0d3f6b9c2e5a8d1f4b7c0e3"
+        self._relay: str = "0xd4b0e3f6a9c2d5e8b1f4a7c0d3e6f9a2b5c8d1e4f7"
+        if not _is_valid_address(self._gatekeeper) or not _is_valid_address(self._treasury):
+            raise IFError("IF_ZERO_ADDR", "Gatekeeper or treasury invalid")
+        self._deploy_block: int = int(time.time())
+        # Mutable state
+        self._paused: bool = False
+        self._exit_nodes: Dict[str, Dict[str, Any]] = {}
+        self._exit_node_list: List[str] = []
+        self._tunnels: Dict[str, Dict[str, Any]] = {}
+        self._tunnel_list: List[str] = []
+        self._sessions: Dict[str, Dict[str, str]] = {}  # session_id -> {tunnel_id, client}
+        self._tunnel_sessions: Dict[str, Set[str]] = {}  # tunnel_id -> set(session_id)
+        self._listeners: List[Callable[[str, Any], None]] = []
+        self._lock = threading.RLock()
+        self._bandwidth: BandwidthTracker = BandwidthTracker()
+        self._key_store: KeyStoreSim = KeyStoreSim()
+
+    # -------------------------------------------------------------------------
+    # Immutable accessors
+    # -------------------------------------------------------------------------
+
+    @property
+    def bandwidth_tracker(self) -> BandwidthTracker:
+        return self._bandwidth
+
+    @property
+    def key_store(self) -> KeyStoreSim:
+        return self._key_store
+
+    @property
+    def gatekeeper(self) -> str:
+        return self._gatekeeper
+
+    @property
+    def treasury(self) -> str:
+        return self._treasury
+
+    @property
+    def relay(self) -> str:
+        return self._relay
+
+    @property
