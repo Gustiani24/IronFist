@@ -61,3 +61,66 @@ def _normalize_address(addr: Optional[str]) -> str:
         return IF_ZERO_ADDR
     s = addr.strip()
     if s.lower().startswith("0x"):
+        return s
+    return "0x" + s
+
+# -----------------------------------------------------------------------------
+# EVENTS (immutable payloads)
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class IFExitNodeRegistered:
+    node_id: str
+    region: str
+    endpoint_hex: str
+    at_block: int
+
+@dataclass(frozen=True)
+class IFTunnelOpened:
+    tunnel_id: str
+    owner: str
+    exit_node_id: str
+    at_block: int
+
+@dataclass(frozen=True)
+class IFSessionBound:
+    tunnel_id: str
+    session_id: str
+    client: str
+    at_block: int
+
+@dataclass(frozen=True)
+class IFTunnelClosed:
+    tunnel_id: str
+    at_block: int
+
+@dataclass(frozen=True)
+class IFNetworkPaused:
+    by: str
+    at_block: int
+
+@dataclass(frozen=True)
+class IFNetworkResumed:
+    by: str
+    at_block: int
+
+# -----------------------------------------------------------------------------
+# SAFE MATH (wei / u256 style)
+# -----------------------------------------------------------------------------
+
+def _clamp_u256(value: int) -> int:
+    if value < 0:
+        return 0
+    max_u256 = (1 << 256) - 1
+    return min(value, max_u256)
+
+def _add_safe(a: int, b: int) -> int:
+    return _clamp_u256(a + b)
+
+def _sub_safe(a: int, b: int) -> int:
+    return max(0, a - b)
+
+# -----------------------------------------------------------------------------
+# REGION MANAGER (off-chain helper; regions for exit nodes)
+# -----------------------------------------------------------------------------
+
