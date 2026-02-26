@@ -502,3 +502,66 @@ class IronFist:
 # ERROR CODES (unique)
 # -----------------------------------------------------------------------------
 
+IF_ERROR_DESCRIPTIONS = {
+    "IF_ZERO_ADDR": "Invalid or zero address",
+    "IF_NOT_GATEKEEPER": "Caller is not gatekeeper",
+    "IF_NETWORK_PAUSED": "Network is paused",
+    "IF_INVALID_NODE_ID": "Exit node id empty or too long",
+    "IF_INVALID_REGION": "Region empty or too long",
+    "IF_NODE_EXISTS": "Exit node already exists",
+    "IF_NODE_CAP": "Exit node limit reached",
+    "IF_NODE_MISSING": "Exit node not found",
+    "IF_INVALID_TUNNEL_ID": "Tunnel id empty or too long",
+    "IF_TUNNEL_EXISTS": "Tunnel already exists",
+    "IF_TUNNEL_CAP": "Tunnel limit reached",
+    "IF_TUNNEL_MISSING": "Tunnel not found",
+    "IF_TUNNEL_CLOSED": "Tunnel already closed",
+    "IF_INVALID_SESSION_ID": "Session id empty or too long",
+    "IF_SESSION_CAP": "Session limit per tunnel reached",
+    "IF_SESSION_EXISTS": "Session already bound",
+}
+
+def get_error_description(code: str) -> str:
+    return IF_ERROR_DESCRIPTIONS.get(code, f"Unknown: {code}")
+
+def get_all_error_codes() -> List[str]:
+    return list(IF_ERROR_DESCRIPTIONS.keys())
+
+# -----------------------------------------------------------------------------
+# HELPER: derive tunnel/session ids (deterministic)
+# -----------------------------------------------------------------------------
+
+def derive_tunnel_id(seed: str, index: int) -> str:
+    h = hashlib.sha256(f"{seed}:tunnel:{index}".encode()).hexdigest()
+    return f"t-{h[:16]}"
+
+def derive_session_id(seed: str, index: int) -> str:
+    h = hashlib.sha256(f"{seed}:session:{index}".encode()).hexdigest()
+    return f"s-{h[:16]}"
+
+# -----------------------------------------------------------------------------
+# INTEGRITY CHECK
+# -----------------------------------------------------------------------------
+
+def run_integrity_check(net: IronFist) -> Optional[str]:
+    if not _is_valid_address(net.gatekeeper):
+        return "IF_ZERO_ADDR: gatekeeper"
+    if not _is_valid_address(net.treasury):
+        return "IF_ZERO_ADDR: treasury"
+    with net._lock:
+        for tid, sessions in net._tunnel_sessions.items():
+            if tid not in net._tunnels:
+                return "IF_TUNNEL_MISSING: orphan sessions"
+            for sid in sessions:
+                if sid not in net._sessions or net._sessions[sid].get("tunnel_id") != tid:
+                    return "IF_SESSION_EXISTS: inconsistent session"
+    return None
+
+# -----------------------------------------------------------------------------
+# STATE ENCODER (export for audit)
+# -----------------------------------------------------------------------------
+
+def encode_summary(net: IronFist) -> str:
+    return (
+        f"IF|{IF_VERSION}|gatekeeper={net.gatekeeper}|treasury={net.treasury}|"
+        f"relay={net.relay}|deploy_block={net.deploy_block}|paused={net.is_paused()}|"
