@@ -1006,3 +1006,56 @@ def take_snapshot(net: IronFist) -> IronFistSnapshot:
         deploy_block=net.deploy_block,
         gatekeeper=net.gatekeeper,
         treasury=net.treasury,
+    )
+
+def get_config() -> IronFistConfig:
+    return IronFistConfig.default()
+
+def addresses_equal(a: Optional[str], b: Optional[str]) -> bool:
+    if a is None and b is None:
+        return True
+    if a is None or b is None:
+        return False
+    return _normalize_address(a).lower() == _normalize_address(b).lower()
+
+def is_gatekeeper(net: IronFist, addr: Optional[str]) -> bool:
+    return addresses_equal(net.gatekeeper, addr)
+
+# -----------------------------------------------------------------------------
+# DEMO / MAIN
+# -----------------------------------------------------------------------------
+
+def _demo_listener(event: str, payload: Any) -> None:
+    print(f"[IF] {event}: {payload}")
+
+def run_full_demo() -> None:
+    print("=== IronFist full demo ===")
+    print("Version:", IF_VERSION, "| Namespace:", IF_NAMESPACE_HEX)
+    print("Runbook:", IFRunbook.summary())
+    print("Gas estimates:", get_all_gas_estimates())
+    net = IronFist()
+    net.add_listener(_demo_listener)
+    print("Gatekeeper:", net.gatekeeper, "| Treasury:", net.treasury)
+    net.run_as_gatekeeper(lambda: net.register_exit_node("demo-node-1", "US", "0x0a", net.gatekeeper))
+    net.run_as_gatekeeper(lambda: net.register_exit_node("demo-node-2", "EU", "0x0b", net.gatekeeper))
+    net.open_tunnel("demo-t1", net.gatekeeper, "demo-node-1")
+    net.bind_session("demo-t1", "demo-s1", net.treasury)
+    net.record_tunnel_bandwidth("demo-t1", 1000)
+    print("Summary:", build_summary_text(net))
+    print("Exit nodes CSV:", build_exit_nodes_csv(net))
+    err = run_integrity_check(net)
+    print("Integrity:", "PASS" if err is None else err)
+    print("=== Demo complete ===")
+
+if __name__ == "__main__":
+    net = IronFist()
+    net.add_listener(_demo_listener)
+    print(f"IronFist {IF_VERSION} | Gatekeeper: {net.gatekeeper} | Treasury: {net.treasury}")
+    net.run_as_gatekeeper(lambda: net.register_exit_node("node-us-1", "US", "0x0a01", net.gatekeeper))
+    net.run_as_gatekeeper(lambda: net.register_exit_node("node-eu-1", "EU", "0x0b02", net.gatekeeper))
+    net.open_tunnel("tunnel-1", "0xb2f8c1e4a6d9f0b3c5e7a9d1f4b6c8e0a2d5f7b9", "node-us-1")
+    net.bind_session("tunnel-1", "sess-1", "0xc3a9d2e5f8b1c4e7a0d3f6b9c2e5a8d1f4b7c0e3")
+    print("Exit nodes:", net.exit_node_count(), "Tunnels:", net.tunnel_count(), "Sessions:", net.session_count())
+    err = run_integrity_check(net)
+    print("Integrity:", "PASS" if err is None else err)
+
