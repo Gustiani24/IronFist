@@ -565,3 +565,66 @@ def encode_summary(net: IronFist) -> str:
     return (
         f"IF|{IF_VERSION}|gatekeeper={net.gatekeeper}|treasury={net.treasury}|"
         f"relay={net.relay}|deploy_block={net.deploy_block}|paused={net.is_paused()}|"
+        f"exit_nodes={net.exit_node_count()}|tunnels={net.tunnel_count()}|sessions={net.session_count()}|"
+        f"namespace={IF_NAMESPACE_HEX}"
+    )
+
+# -----------------------------------------------------------------------------
+# RUNBOOK (procedure steps; no state change)
+# -----------------------------------------------------------------------------
+
+class IFRunbook:
+    STEP_REGISTER_NODE = 1
+    STEP_OPEN_TUNNEL = 2
+    STEP_BIND_SESSION = 3
+    STEP_CLOSE_TUNNEL = 4
+    STEP_PAUSE = 5
+    STEP_RESUME = 6
+
+    @classmethod
+    def describe(cls, step: int) -> str:
+        if step == cls.STEP_REGISTER_NODE:
+            return "Register exit node (gatekeeper only)"
+        if step == cls.STEP_OPEN_TUNNEL:
+            return "Open tunnel bound to exit node"
+        if step == cls.STEP_BIND_SESSION:
+            return "Bind session to tunnel"
+        if step == cls.STEP_CLOSE_TUNNEL:
+            return "Close tunnel (owner or gatekeeper)"
+        if step == cls.STEP_PAUSE:
+            return "Pause network (gatekeeper only)"
+        if step == cls.STEP_RESUME:
+            return "Resume network (gatekeeper only)"
+        return "Unknown step"
+
+    @classmethod
+    def summary(cls) -> str:
+        return "IronFist runbook: 1=RegisterNode 2=OpenTunnel 3=BindSession 4=CloseTunnel 5=Pause 6=Resume"
+
+    @classmethod
+    def all_steps(cls) -> List[int]:
+        return [cls.STEP_REGISTER_NODE, cls.STEP_OPEN_TUNNEL, cls.STEP_BIND_SESSION, cls.STEP_CLOSE_TUNNEL, cls.STEP_PAUSE, cls.STEP_RESUME]
+
+# -----------------------------------------------------------------------------
+# GAS ESTIMATOR (off-chain approximate)
+# -----------------------------------------------------------------------------
+
+def estimate_gas_register_exit_node() -> int:
+    return 95_000
+
+def estimate_gas_open_tunnel() -> int:
+    return 78_000
+
+def estimate_gas_bind_session() -> int:
+    return 65_000
+
+def estimate_gas_close_tunnel() -> int:
+    return 52_000
+
+def estimate_gas_pause() -> int:
+    return 35_000
+
+def estimate_gas_resume() -> int:
+    return 35_000
+
+def get_all_gas_estimates() -> Dict[str, int]:
