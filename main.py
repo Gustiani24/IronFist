@@ -376,3 +376,66 @@ class IronFist:
         return t is not None and t.get("closed", False)
 
     def list_tunnels_batch(self, offset: int, limit: int) -> List[str]:
+        with self._lock:
+            size = len(self._tunnel_list)
+            if offset >= size:
+                return []
+            end = min(offset + min(limit, IF_VIEW_BATCH), size)
+            return list(self._tunnel_list[offset:end])
+
+    # -------------------------------------------------------------------------
+    # Sessions
+    # -------------------------------------------------------------------------
+
+    def bind_session(self, tunnel_id: str, session_id: str, client: str, sender: Optional[str] = None) -> None:
+        self._require_not_paused()
+        if not session_id or len(session_id) > IF_MAX_LABEL_LEN:
+            raise IFError("IF_INVALID_SESSION_ID", "Session id empty or too long")
+        if not _is_valid_address(client):
+            raise IFError("IF_ZERO_ADDR", "Client address invalid")
+        with self._lock:
+            t = self._tunnels.get(tunnel_id)
+            if not t:
+                raise IFError("IF_TUNNEL_MISSING", "Tunnel not found")
+            if t["closed"]:
+                raise IFError("IF_TUNNEL_CLOSED", "Cannot bind to closed tunnel")
+            sessions = self._tunnel_sessions.get(tunnel_id, set())
+            if len(sessions) >= IF_MAX_SESSIONS_PER_TUNNEL:
+                raise IFError("IF_SESSION_CAP", "Session limit per tunnel reached")
+            if session_id in self._sessions:
+                raise IFError("IF_SESSION_EXISTS", "Session already bound")
+            self._sessions[session_id] = {"tunnel_id": tunnel_id, "client": _normalize_address(client)}
+            sessions.add(session_id)
+        blk = self._current_block()
+        self._emit("SessionBound", IFSessionBound(tunnel_id, session_id, client, blk))
+
+    def get_session(self, session_id: str) -> Optional[Dict[str, str]]:
+        with self._lock:
+            s = self._sessions.get(session_id)
+            return dict(s) if s else None
+
+    def get_tunnel_sessions(self, tunnel_id: str) -> List[str]:
+        with self._lock:
+            return list(self._tunnel_sessions.get(tunnel_id, []))
+
+    # -------------------------------------------------------------------------
+    # Pause / resume (gatekeeper only)
+    # -------------------------------------------------------------------------
+
+    def pause_network(self, sender: Optional[str] = None) -> None:
+        self._require_gatekeeper(sender)
+        self._paused = True
+        blk = self._current_block()
+        self._emit("NetworkPaused", IFNetworkPaused(self._gatekeeper, blk))
+
+    def resume_network(self, sender: Optional[str] = None) -> None:
+        self._require_gatekeeper(sender)
+        self._paused = False
+        blk = self._current_block()
+        self._emit("NetworkResumed", IFNetworkResumed(self._gatekeeper, blk))
+
+    # -------------------------------------------------------------------------
+    # Event listener
+    # -------------------------------------------------------------------------
+
+    def add_listener(self, callback: Callable[[str, Any], None]) -> None:
