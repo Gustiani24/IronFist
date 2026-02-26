@@ -880,3 +880,66 @@ class IronFistConfig:
 class IFAuditEntry:
     timestamp: int
     action: str
+    actor: str
+    detail: str
+
+class IFAuditLog:
+    def __init__(self, max_entries: int = 10_000) -> None:
+        self._entries: List[IFAuditEntry] = []
+        self._max = max_entries
+        self._lock = threading.Lock()
+
+    def append(self, action: str, actor: str, detail: str) -> None:
+        with self._lock:
+            self._entries.append(IFAuditEntry(int(time.time()), action, actor, detail))
+            while len(self._entries) > self._max:
+                self._entries.pop(0)
+
+    def recent(self, n: int) -> List[IFAuditEntry]:
+        with self._lock:
+            if n <= 0 or not self._entries:
+                return []
+            return list(self._entries[-n:])
+
+    def size(self) -> int:
+        return len(self._entries)
+
+# -----------------------------------------------------------------------------
+# SESSION EXPIRY SIMULATION (optional TTL tracking; off-chain)
+# -----------------------------------------------------------------------------
+
+class SessionExpirySim:
+    def __init__(self) -> None:
+        self._expiry: Dict[str, int] = {}
+        self._lock = threading.Lock()
+
+    def set_expiry(self, session_id: str, at_timestamp: int) -> None:
+        with self._lock:
+            self._expiry[session_id] = at_timestamp
+
+    def get_expiry(self, session_id: str) -> Optional[int]:
+        with self._lock:
+            return self._expiry.get(session_id)
+
+    def is_expired(self, session_id: str, now: Optional[int] = None) -> bool:
+        ts = now or int(time.time())
+        with self._lock:
+            e = self._expiry.get(session_id)
+            return e is not None and ts >= e
+
+# -----------------------------------------------------------------------------
+# INTEGRATION FLOW (full cycle for tests)
+# -----------------------------------------------------------------------------
+
+def run_integration_flow(
+    num_exit_nodes: int,
+    num_tunnels: int,
+    sessions_per_tunnel: int,
+) -> IronFist:
+    net = IronFist()
+    regions = ["US", "EU", "AP"]
+    for i in range(num_exit_nodes):
+        r = regions[i % len(regions)]
+        nid = f"int-node-{r}-{i}"
+        net.run_as_gatekeeper(lambda nid=nid, r=r: net.register_exit_node(nid, r, "0x00", net.gatekeeper))
+    node_ids = net.list_all_exit_node_ids()
