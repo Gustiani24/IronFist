@@ -817,3 +817,66 @@ def get_all_tunnel_health(net: IronFist) -> List[Dict[str, Any]]:
     return out
 
 def would_open_tunnel_succeed(net: IronFist, tunnel_id: str, owner: str, exit_node_id: str) -> bool:
+    return len(validate_open_tunnel(net, tunnel_id, owner, exit_node_id)) == 0
+
+def would_bind_session_succeed(net: IronFist, tunnel_id: str, session_id: str, client: str) -> bool:
+    return len(validate_bind_session(net, tunnel_id, session_id, client)) == 0
+
+def would_register_node_succeed(net: IronFist, node_id: str, region: str) -> bool:
+    return len(validate_register_node(net, node_id, region)) == 0
+
+# -----------------------------------------------------------------------------
+# REGION STATS
+# -----------------------------------------------------------------------------
+
+def get_region_stats(net: IronFist) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for nid in net.list_all_exit_node_ids():
+        n = net.get_exit_node(nid)
+        if n:
+            r = (n.get("region") or "XX").upper()
+            counts[r] = counts.get(r, 0) + 1
+    return counts
+
+# -----------------------------------------------------------------------------
+# BATCH OPERATIONS (convenience)
+# -----------------------------------------------------------------------------
+
+def batch_register_exit_nodes(net: IronFist, entries: List[Tuple[str, str, str]], sender: Optional[str] = None) -> None:
+    for node_id, region, endpoint in entries:
+        net.register_exit_node(node_id, region, endpoint, sender)
+
+def batch_open_tunnels(net: IronFist, entries: List[Tuple[str, str, str]]) -> None:
+    for tunnel_id, owner, exit_node_id in entries:
+        net.open_tunnel(tunnel_id, owner, exit_node_id)
+
+# -----------------------------------------------------------------------------
+# CONFIG (immutable after init; for mainnet alignment)
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class IronFistConfig:
+    chain_id: str
+    namespace_hex: str
+    max_tunnels: int
+    max_exit_nodes: int
+    max_sessions_per_tunnel: int
+
+    @classmethod
+    def default(cls) -> IronFistConfig:
+        return cls(
+            chain_id=IF_CHAIN_ID,
+            namespace_hex=IF_NAMESPACE_HEX,
+            max_tunnels=IF_MAX_TUNNELS,
+            max_exit_nodes=IF_MAX_EXIT_NODES,
+            max_sessions_per_tunnel=IF_MAX_SESSIONS_PER_TUNNEL,
+        )
+
+# -----------------------------------------------------------------------------
+# AUDIT LOG (append-only entries for off-chain audit)
+# -----------------------------------------------------------------------------
+
+@dataclass
+class IFAuditEntry:
+    timestamp: int
+    action: str
