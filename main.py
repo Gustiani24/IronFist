@@ -313,3 +313,66 @@ class IronFist:
             if offset >= size:
                 return []
             end = min(offset + min(limit, IF_VIEW_BATCH), size)
+            return list(self._exit_node_list[offset:end])
+
+    # -------------------------------------------------------------------------
+    # Tunnels
+    # -------------------------------------------------------------------------
+
+    def open_tunnel(self, tunnel_id: str, owner: str, exit_node_id: str, sender: Optional[str] = None) -> None:
+        self._require_not_paused()
+        if not tunnel_id or len(tunnel_id) > IF_MAX_LABEL_LEN:
+            raise IFError("IF_INVALID_TUNNEL_ID", "Tunnel id empty or too long")
+        if not _is_valid_address(owner):
+            raise IFError("IF_ZERO_ADDR", "Owner address invalid")
+        with self._lock:
+            if exit_node_id not in self._exit_nodes:
+                raise IFError("IF_NODE_MISSING", "Exit node not found")
+            if tunnel_id in self._tunnels:
+                raise IFError("IF_TUNNEL_EXISTS", "Tunnel already exists")
+            if len(self._tunnels) >= IF_MAX_TUNNELS:
+                raise IFError("IF_TUNNEL_CAP", "Tunnel limit reached")
+            self._tunnels[tunnel_id] = {
+                "owner": _normalize_address(owner),
+                "exit_node_id": exit_node_id,
+                "opened_at": self._current_block(),
+                "closed": False,
+            }
+            self._tunnel_list.append(tunnel_id)
+            self._tunnel_sessions[tunnel_id] = set()
+        blk = self._current_block()
+        self._emit("TunnelOpened", IFTunnelOpened(tunnel_id, owner, exit_node_id, blk))
+
+    def close_tunnel(self, tunnel_id: str, sender: Optional[str] = None) -> None:
+        self._require_not_paused()
+        with self._lock:
+            t = self._tunnels.get(tunnel_id)
+            if not t:
+                raise IFError("IF_TUNNEL_MISSING", "Tunnel not found")
+            if t["closed"]:
+                raise IFError("IF_TUNNEL_CLOSED", "Tunnel already closed")
+            owner_norm = _normalize_address(t["owner"])
+            sender_norm = _normalize_address(sender) if sender else ""
+            if sender_norm and sender_norm != owner_norm:
+                self._require_gatekeeper(sender)
+            t["closed"] = True
+        blk = self._current_block()
+        self._emit("TunnelClosed", IFTunnelClosed(tunnel_id, blk))
+
+    def get_tunnel(self, tunnel_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            t = self._tunnels.get(tunnel_id)
+            if not t:
+                return None
+            out = dict(t)
+            out["session_count"] = len(self._tunnel_sessions.get(tunnel_id, []))
+            return out
+
+    def tunnel_exists(self, tunnel_id: str) -> bool:
+        return tunnel_id in self._tunnels
+
+    def is_tunnel_closed(self, tunnel_id: str) -> bool:
+        t = self._tunnels.get(tunnel_id)
+        return t is not None and t.get("closed", False)
+
+    def list_tunnels_batch(self, offset: int, limit: int) -> List[str]:
