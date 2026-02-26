@@ -250,3 +250,66 @@ class IronFist:
         return self._relay
 
     @property
+    def deploy_block(self) -> int:
+        return self._deploy_block
+
+    def is_paused(self) -> bool:
+        return self._paused
+
+    def _require_gatekeeper(self, sender: Optional[str]) -> None:
+        if sender is None or _normalize_address(sender).lower() != _normalize_address(self._gatekeeper).lower():
+            raise IFError("IF_NOT_GATEKEEPER", "Caller is not gatekeeper")
+
+    def _require_not_paused(self) -> None:
+        if self._paused:
+            raise IFError("IF_NETWORK_PAUSED", "Network is paused")
+
+    def _current_block(self) -> int:
+        return int(time.time())
+
+    def _emit(self, event_name: str, payload: Any) -> None:
+        for cb in self._listeners:
+            try:
+                cb(event_name, payload)
+            except Exception:
+                pass
+
+    # -------------------------------------------------------------------------
+    # Exit nodes (gatekeeper only)
+    # -------------------------------------------------------------------------
+
+    def register_exit_node(self, node_id: str, region: str, endpoint_hex: str, sender: Optional[str] = None) -> None:
+        self._require_gatekeeper(sender)
+        self._require_not_paused()
+        if not node_id or len(node_id) > IF_MAX_LABEL_LEN:
+            raise IFError("IF_INVALID_NODE_ID", "Node id empty or too long")
+        if not region or len(region) > IF_MAX_REGION_LEN:
+            raise IFError("IF_INVALID_REGION", "Region empty or too long")
+        with self._lock:
+            if node_id in self._exit_nodes:
+                raise IFError("IF_NODE_EXISTS", "Exit node already exists")
+            if len(self._exit_nodes) >= IF_MAX_EXIT_NODES:
+                raise IFError("IF_NODE_CAP", "Exit node limit reached")
+            self._exit_nodes[node_id] = {
+                "region": region,
+                "endpoint_hex": endpoint_hex or "",
+                "created_at": self._current_block(),
+            }
+            self._exit_node_list.append(node_id)
+        blk = self._current_block()
+        self._emit("ExitNodeRegistered", IFExitNodeRegistered(node_id, region, endpoint_hex or "", blk))
+
+    def get_exit_node(self, node_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            n = self._exit_nodes.get(node_id)
+            return dict(n) if n else None
+
+    def exit_node_exists(self, node_id: str) -> bool:
+        return node_id in self._exit_nodes
+
+    def list_exit_nodes_batch(self, offset: int, limit: int) -> List[str]:
+        with self._lock:
+            size = len(self._exit_node_list)
+            if offset >= size:
+                return []
+            end = min(offset + min(limit, IF_VIEW_BATCH), size)
