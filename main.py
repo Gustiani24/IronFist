@@ -628,3 +628,66 @@ def estimate_gas_resume() -> int:
     return 35_000
 
 def get_all_gas_estimates() -> Dict[str, int]:
+    return {
+        "register_exit_node": estimate_gas_register_exit_node(),
+        "open_tunnel": estimate_gas_open_tunnel(),
+        "bind_session": estimate_gas_bind_session(),
+        "close_tunnel": estimate_gas_close_tunnel(),
+        "pause_network": estimate_gas_pause(),
+        "resume_network": estimate_gas_resume(),
+    }
+
+# -----------------------------------------------------------------------------
+# REPORT BUILDER (CSV / text for off-chain tools)
+# -----------------------------------------------------------------------------
+
+def build_exit_nodes_csv(net: IronFist) -> List[str]:
+    lines = ["node_id,region,endpoint_hex,created_at"]
+    for nid in net.list_all_exit_node_ids():
+        n = net.get_exit_node(nid)
+        if n:
+            lines.append(f"{nid},{n.get('region','')},{n.get('endpoint_hex','')},{n.get('created_at',0)}")
+    return lines
+
+def build_tunnels_csv(net: IronFist) -> List[str]:
+    lines = ["tunnel_id,owner,exit_node_id,opened_at,closed,session_count"]
+    for tid in net.list_all_tunnel_ids():
+        t = net.get_tunnel(tid)
+        if t:
+            lines.append(f"{tid},{t.get('owner','')},{t.get('exit_node_id','')},{t.get('opened_at',0)},{t.get('closed',False)},{t.get('session_count',0)}")
+    return lines
+
+def build_summary_text(net: IronFist) -> str:
+    return (
+        f"IronFist {IF_VERSION} | exit_nodes={net.exit_node_count()} tunnels={net.tunnel_count()} "
+        f"active_tunnels={net.active_tunnel_count()} sessions={net.session_count()} paused={net.is_paused()}"
+    )
+
+# -----------------------------------------------------------------------------
+# VALIDATION HELPERS (pre-flight)
+# -----------------------------------------------------------------------------
+
+def validate_register_node(net: IronFist, node_id: str, region: str) -> List[str]:
+    reasons = []
+    if net.is_paused():
+        reasons.append("IF_NETWORK_PAUSED")
+    if net.exit_node_count() >= IF_MAX_EXIT_NODES:
+        reasons.append("IF_NODE_CAP")
+    if not node_id or len(node_id) > IF_MAX_LABEL_LEN:
+        reasons.append("IF_INVALID_NODE_ID")
+    if not region or len(region) > IF_MAX_REGION_LEN:
+        reasons.append("IF_INVALID_REGION")
+    if net.exit_node_exists(node_id):
+        reasons.append("IF_NODE_EXISTS")
+    return reasons
+
+def validate_open_tunnel(net: IronFist, tunnel_id: str, owner: str, exit_node_id: str) -> List[str]:
+    reasons = []
+    if net.is_paused():
+        reasons.append("IF_NETWORK_PAUSED")
+    if not tunnel_id or len(tunnel_id) > IF_MAX_LABEL_LEN:
+        reasons.append("IF_INVALID_TUNNEL_ID")
+    if not _is_valid_address(owner):
+        reasons.append("IF_ZERO_ADDR")
+    if not net.exit_node_exists(exit_node_id):
+        reasons.append("IF_NODE_MISSING")
