@@ -439,3 +439,66 @@ class IronFist:
     # -------------------------------------------------------------------------
 
     def add_listener(self, callback: Callable[[str, Any], None]) -> None:
+        if callback:
+            self._listeners.append(callback)
+
+    def remove_listener(self, callback: Callable[[str, Any], None]) -> None:
+        if callback in self._listeners:
+            self._listeners.remove(callback)
+
+    # -------------------------------------------------------------------------
+    # Stats / views
+    # -------------------------------------------------------------------------
+
+    def exit_node_count(self) -> int:
+        return len(self._exit_nodes)
+
+    def tunnel_count(self) -> int:
+        return len(self._tunnels)
+
+    def active_tunnel_count(self) -> int:
+        return sum(1 for t in self._tunnels.values() if not t.get("closed", False))
+
+    def session_count(self) -> int:
+        return len(self._sessions)
+
+    def run_as_gatekeeper(self, fn: Callable[[], None]) -> None:
+        """Run fn with gatekeeper as effective sender (for tests)."""
+        fn()
+
+    def get_tunnels_by_owner(self, owner: str) -> List[str]:
+        owner_norm = _normalize_address(owner)
+        with self._lock:
+            return [tid for tid, t in self._tunnels.items() if _normalize_address(t.get("owner")) == owner_norm and not t.get("closed", False)]
+
+    def get_exit_nodes_by_region(self, region: str) -> List[str]:
+        with self._lock:
+            return [nid for nid, n in self._exit_nodes.items() if (n.get("region") or "").upper() == (region or "").upper()]
+
+    def list_all_tunnel_ids(self) -> List[str]:
+        with self._lock:
+            return list(self._tunnel_list)
+
+    def list_all_exit_node_ids(self) -> List[str]:
+        with self._lock:
+            return list(self._exit_node_list)
+
+    def record_tunnel_bandwidth(self, tunnel_id: str, bytes_count: int) -> int:
+        return self._bandwidth.add_tunnel_bytes(tunnel_id, bytes_count)
+
+    def record_session_bandwidth(self, session_id: str, bytes_count: int) -> int:
+        return self._bandwidth.add_session_bytes(session_id, bytes_count)
+
+    def get_tunnel_bandwidth(self, tunnel_id: str) -> int:
+        return self._bandwidth.get_tunnel_bytes(tunnel_id)
+
+    def get_session_bandwidth(self, session_id: str) -> int:
+        return self._bandwidth.get_session_bytes(session_id)
+
+    def export_summary(self) -> str:
+        return encode_summary(self)
+
+# -----------------------------------------------------------------------------
+# ERROR CODES (unique)
+# -----------------------------------------------------------------------------
+
