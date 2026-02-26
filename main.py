@@ -691,3 +691,66 @@ def validate_open_tunnel(net: IronFist, tunnel_id: str, owner: str, exit_node_id
         reasons.append("IF_ZERO_ADDR")
     if not net.exit_node_exists(exit_node_id):
         reasons.append("IF_NODE_MISSING")
+    if net.tunnel_exists(tunnel_id):
+        reasons.append("IF_TUNNEL_EXISTS")
+    if net.tunnel_count() >= IF_MAX_TUNNELS:
+        reasons.append("IF_TUNNEL_CAP")
+    return reasons
+
+def validate_bind_session(net: IronFist, tunnel_id: str, session_id: str, client: str) -> List[str]:
+    reasons = []
+    if net.is_paused():
+        reasons.append("IF_NETWORK_PAUSED")
+    if not net.tunnel_exists(tunnel_id):
+        reasons.append("IF_TUNNEL_MISSING")
+    elif net.is_tunnel_closed(tunnel_id):
+        reasons.append("IF_TUNNEL_CLOSED")
+    if not session_id or len(session_id) > IF_MAX_LABEL_LEN:
+        reasons.append("IF_INVALID_SESSION_ID")
+    if not _is_valid_address(client):
+        reasons.append("IF_ZERO_ADDR")
+    if session_id and net.get_session(session_id) is not None:
+        reasons.append("IF_SESSION_EXISTS")
+    return reasons
+
+def validate_close_tunnel(net: IronFist, tunnel_id: str) -> List[str]:
+    reasons = []
+    if net.is_paused():
+        reasons.append("IF_NETWORK_PAUSED")
+    if not net.tunnel_exists(tunnel_id):
+        reasons.append("IF_TUNNEL_MISSING")
+    elif net.is_tunnel_closed(tunnel_id):
+        reasons.append("IF_TUNNEL_CLOSED")
+    return reasons
+
+# -----------------------------------------------------------------------------
+# SCENARIOS (deterministic flows for testing)
+# -----------------------------------------------------------------------------
+
+def scenario_single_tunnel_single_session() -> IronFist:
+    net = IronFist()
+    net.run_as_gatekeeper(lambda: net.register_exit_node("node-1", "US", "0x01", net.gatekeeper))
+    net.open_tunnel("t1", net.gatekeeper, "node-1")
+    net.bind_session("t1", "s1", net.treasury)
+    return net
+
+def scenario_multi_region(num_nodes_per_region: int, num_tunnels: int) -> IronFist:
+    net = IronFist()
+    regions = ["US", "EU", "AP"]
+    for r in regions:
+        for i in range(num_nodes_per_region):
+            nid = f"node-{r}-{i}"
+            net.run_as_gatekeeper(lambda nid=nid, r=r: net.register_exit_node(nid, r, "0x00", net.gatekeeper))
+    for i in range(min(num_tunnels, net.exit_node_count())):
+        nids = net.list_all_exit_node_ids()
+        if i < len(nids):
+            net.open_tunnel(f"t-{i}", net.gatekeeper, nids[i])
+    return net
+
+def scenario_pause_resume() -> IronFist:
+    net = scenario_single_tunnel_single_session()
+    net.run_as_gatekeeper(lambda: net.pause_network(net.gatekeeper))
+    net.run_as_gatekeeper(lambda: net.resume_network(net.gatekeeper))
+    return net
+
+# -----------------------------------------------------------------------------
