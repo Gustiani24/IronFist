@@ -943,3 +943,66 @@ def run_integration_flow(
         nid = f"int-node-{r}-{i}"
         net.run_as_gatekeeper(lambda nid=nid, r=r: net.register_exit_node(nid, r, "0x00", net.gatekeeper))
     node_ids = net.list_all_exit_node_ids()
+    for i in range(min(num_tunnels, len(node_ids))):
+        tid = f"int-t-{i}"
+        net.open_tunnel(tid, net.gatekeeper, node_ids[i % len(node_ids)])
+    tunnel_ids = [tid for tid in net.list_all_tunnel_ids() if not net.is_tunnel_closed(tid)]
+    for tid in tunnel_ids[:num_tunnels]:
+        for j in range(sessions_per_tunnel):
+            sid = f"int-s-{tid}-{j}"
+            try:
+                net.bind_session(tid, sid, net.treasury)
+            except IFError:
+                break
+    err = run_integrity_check(net)
+    if err:
+        raise IFError("IF_INTEGRITY", err)
+    return net
+
+# -----------------------------------------------------------------------------
+# USAGE REFERENCE (inline; no execution)
+# -----------------------------------------------------------------------------
+#
+# 1. net = IronFist()  # gatekeeper, treasury, relay set at construction
+# 2. net.run_as_gatekeeper(lambda: net.register_exit_node("node-1", "US", "0x01", net.gatekeeper))
+# 3. net.open_tunnel("t1", owner_addr, "node-1")
+# 4. net.bind_session("t1", "sess-1", client_addr)
+# 5. net.close_tunnel("t1", owner_addr)  # or gatekeeper
+# 6. net.run_as_gatekeeper(lambda: net.pause_network(net.gatekeeper))
+# 7. net.run_as_gatekeeper(lambda: net.resume_network(net.gatekeeper))
+# 8. Views: net.get_tunnel(tid), net.get_exit_node(nid), net.get_session(sid), net.get_tunnels_by_owner(addr)
+# 9. Export: encode_summary(net), build_exit_nodes_csv(net), build_tunnels_csv(net)
+# 10. Integrity: run_integrity_check(net)
+#
+# Addresses (immutable at construction):
+#   gatekeeper: 0xb2f8c1e4a6d9f0b3c5e7a9d1f4b6c8e0a2d5f7b9
+#   treasury:   0xc3a9d2e5f8b1c4e7a0d3f6b9c2e5a8d1f4b7c0e3
+#   relay:     0xd4b0e3f6a9c2d5e8b1f4a7c0d3e6f9a2b5c8d1e4f7
+#   namespace: 0xe5c1d4f7a0b3c6e9d2f5a8b1c4e7d0f3a6b9c2e5f8
+#
+
+# -----------------------------------------------------------------------------
+# SNAPSHOT (immutable state capture for audit)
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class IronFistSnapshot:
+    exit_node_count: int
+    tunnel_count: int
+    active_tunnel_count: int
+    session_count: int
+    paused: bool
+    deploy_block: int
+    gatekeeper: str
+    treasury: str
+
+def take_snapshot(net: IronFist) -> IronFistSnapshot:
+    return IronFistSnapshot(
+        exit_node_count=net.exit_node_count(),
+        tunnel_count=net.tunnel_count(),
+        active_tunnel_count=net.active_tunnel_count(),
+        session_count=net.session_count(),
+        paused=net.is_paused(),
+        deploy_block=net.deploy_block,
+        gatekeeper=net.gatekeeper,
+        treasury=net.treasury,
