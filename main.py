@@ -754,3 +754,66 @@ def scenario_pause_resume() -> IronFist:
     return net
 
 # -----------------------------------------------------------------------------
+# ENCODING / DECODING (hex, summary parse)
+# -----------------------------------------------------------------------------
+
+def bytes_to_hex(b: bytes) -> str:
+    return "0x" + b.hex()
+
+def hex_to_bytes(s: Optional[str]) -> bytes:
+    if not s:
+        return b""
+    t = s.strip().lower()
+    if t.startswith("0x"):
+        t = t[2:]
+    if len(t) % 2:
+        t = "0" + t
+    return bytes.fromhex(t)
+
+def decode_summary(line: str) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    if not line or not line.startswith("IF|"):
+        return out
+    parts = line.split("|")
+    for i in range(1, len(parts)):
+        p = parts[i]
+        eq = p.find("=")
+        if eq > 0:
+            out[p[:eq]] = p[eq + 1:]
+    return out
+
+def is_zero_address(addr: Optional[str]) -> bool:
+    if not addr:
+        return True
+    n = _normalize_address(addr)
+    return n == IF_ZERO_ADDR or n.replace("0", "").replace("x", "").strip() == ""
+
+# -----------------------------------------------------------------------------
+# TUNNEL HEALTH (off-chain view)
+# -----------------------------------------------------------------------------
+
+def get_tunnel_health(net: IronFist, tunnel_id: str) -> Optional[Dict[str, Any]]:
+    t = net.get_tunnel(tunnel_id)
+    if not t:
+        return None
+    sessions = net.get_tunnel_sessions(tunnel_id)
+    bw = net.get_tunnel_bandwidth(tunnel_id)
+    return {
+        "tunnel_id": tunnel_id,
+        "owner": t.get("owner"),
+        "exit_node_id": t.get("exit_node_id"),
+        "opened_at": t.get("opened_at"),
+        "closed": t.get("closed", False),
+        "session_count": len(sessions),
+        "bandwidth_bytes": bw,
+    }
+
+def get_all_tunnel_health(net: IronFist) -> List[Dict[str, Any]]:
+    out = []
+    for tid in net.list_all_tunnel_ids():
+        h = get_tunnel_health(net, tid)
+        if h is not None:
+            out.append(h)
+    return out
+
+def would_open_tunnel_succeed(net: IronFist, tunnel_id: str, owner: str, exit_node_id: str) -> bool:
